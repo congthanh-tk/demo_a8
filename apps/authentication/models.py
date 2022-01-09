@@ -37,6 +37,13 @@ class Users(db.Model, UserMixin):
         return str(self.username)
 
 
+class BlacklistIPs(db.Model):
+    __tablename__ = 'BlacklistIP'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ip = db.Column(db.String(255), nullable=False)
+
+
 @login_manager.user_loader
 def user_loader(id):
     return Users.query.filter_by(id=id).first()

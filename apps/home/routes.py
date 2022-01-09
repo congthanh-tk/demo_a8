@@ -3,16 +3,30 @@
 Copyright (c) 2019 - present AppSeed.us
 """
 
+from apps.config import Config
 from apps.home import blueprint
-from flask import render_template, request, redirect
+from flask import render_template, request, redirect, abort
 from flask_login import login_required
 from jinja2 import TemplateNotFound
 from apps.authentication.forms import LoginForm
 import base64
 import pickle
-from apps.authentication.models import Users
-
+from apps.authentication.models import Users, BlacklistIPs
 from functools import wraps
+from apps.utils import pickletool_utils
+from apps import db
+import hmac
+import hashlib
+# Check blacklist IP
+@blueprint.before_request
+def block_method():
+    print("************ Check Black IP *************")
+    ip = request.remote_addr
+    print(">>>>>>>>>>> ip: " + ip)
+    findInBlackListIP = BlacklistIPs.query.filter_by(ip=ip).first()
+    if findInBlackListIP:
+        print(f"IP {ip} found in blacklist. Abort!")
+        abort(403)
 
 
 def isBase64(sb):
@@ -29,17 +43,84 @@ def isBase64(sb):
         return False
 
 
+# def check_oauth():
+#     def _check_oauth(f):
+#         @wraps(f)
+#         def __check_oauth(*args, **kwargs):
+#             # just do here everything what you need
+#             print('************ Checking authentication ************')
+#             result = redirect('logout')
+#             auth = request.cookies.get('auth')
+
+#             # Using HMAC to verify authentication
+#             auth, hmac_base64 = auth.split('##') if len(
+#                 auth.split('##')) == 2 else None, None
+#             if auth and isBase64(auth) and hmac_base64 and isBase64(hmac_base64):
+#                 try:
+#                     auth_hmac = base64.b64decode(hmac_base64.encode('utf8'))
+#                     auth = base64.b64decode(auth.encode('utf8'))
+#                     isAuth = hmac.compare_digest(
+#                         auth_hmac,
+#                         hashlib.pbkdf2_hmac(
+#                             'sha256', auth, Config.SECRET_KEY.encode('UTF-8'), 100000)
+#                     )
+#                     if not isAuth:
+#                         return result
+
+#                     auth = pickle.loads(auth)
+#                     if "username" in auth:
+#                         username = auth['username']
+#                         user = Users.query.filter_by(username=username).first()
+#                         if user:
+#                             result = f(*args, **kwargs)
+#                     else:
+#                         result = render_template('home/index.html')
+#                 except Exception as e:
+#                     print(e)
+
+#             return result
+#         return __check_oauth
+#     return _check_oauth
+
+
+class SandBox(object):
+    def __init__(self):
+        pass
+
+    def check_blacklist(self, serialized):
+        serialized_analyst = " ".join(
+            " ".join(pickletool_utils.dis(serialized)).split()).lower()
+        for keyword in Config.blacklists:
+            if keyword.lower() in serialized_analyst:
+                return True
+        return False
+
+
+sandbox = SandBox()
+
+
 def check_oauth():
     def _check_oauth(f):
         @wraps(f)
         def __check_oauth(*args, **kwargs):
             # just do here everything what you need
             print('************ Checking authentication ************')
+            result = redirect('logout')
             auth = request.cookies.get('auth')
             if auth and isBase64(auth):
                 try:
-                    auth = pickle.loads(base64.b64decode(auth))
-                    # print(auth)
+                    # Analyst serialized using SandBox
+                    serialized_auth = base64.b64decode(auth)
+                    if sandbox.check_blacklist(serialized_auth):
+                        print('************ Detect malicious **************')
+                        print('************ Add to blacklist IP **************')
+                        ip = request.remote_addr
+                        db.session.add(BlacklistIPs(ip=ip))
+                        db.session.commit()
+                        return result
+
+                    auth = pickle.loads(serialized_auth)
+
                     if "username" in auth:
                         username = auth['username']
                         user = Users.query.filter_by(username=username).first()
@@ -49,12 +130,37 @@ def check_oauth():
                         result = render_template('home/index.html')
                 except Exception as e:
                     print(e)
-                    result = redirect('logout')
-            else:
-                result = redirect('logout')
             return result
         return __check_oauth
     return _check_oauth
+
+
+# def check_oauth():
+#     def _check_oauth(f):
+#         @wraps(f)
+#         def __check_oauth(*args, **kwargs):
+#             # just do here everything what you need
+#             print('************ Checking authentication ************')
+#             auth = request.cookies.get('auth')
+#             if auth and isBase64(auth):
+#                 try:
+#                     auth = pickle.loads(base64.b64decode(auth))
+#                     # print(auth)
+#                     if "username" in auth:
+#                         username = auth['username']
+#                         user = Users.query.filter_by(username=username).first()
+#                         if user:
+#                             result = f(*args, **kwargs)
+#                     else:
+#                         result = render_template('home/index.html')
+#                 except Exception as e:
+#                     print(e)
+#                     result = redirect('logout')
+#             else:
+#                 result = redirect('logout')
+#             return result
+#         return __check_oauth
+#     return _check_oauth
 
 
 @blueprint.route('/index')

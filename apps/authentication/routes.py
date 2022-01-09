@@ -16,7 +16,8 @@ from apps import db, login_manager
 from apps.authentication import blueprint
 from apps.authentication.forms import LoginForm, CreateAccountForm
 from apps.authentication.models import Users
-
+import hashlib
+from apps.config import Config
 from apps.authentication.util import verify_pass
 
 
@@ -46,6 +47,22 @@ def login():
             user = user.__dict__
             del user['password']
             del user['_sa_instance_state']
+
+            # # Add HMAC to user cookie
+            # user_serialization = pickle.dumps(user)
+            # user_serialization_hash = hashlib.pbkdf2_hmac(
+            #     'sha256', user_serialization, Config.SECRET_KEY.encode('UTF-8'), 100000)
+
+            # user_serialization_encode = base64.b64encode(
+            #     user_serialization)
+            # user_serialization_hash_encode = base64.b64encode(
+            #     user_serialization_hash)
+
+            # auth = user_serialization_encode.decode(
+            #     'utf-8') + "##" + user_serialization_hash_encode.decode('utf-8')
+
+            # res.set_cookie('auth', auth)
+
             res.set_cookie('auth', base64.b64encode(
                 pickle.dumps(user)))
             return res
